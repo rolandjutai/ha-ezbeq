@@ -18,7 +18,7 @@ automations
 2. ezBEQ will appear as an add-on. Download it.
 3. Under Settings --> Devices and Services, add ezBEZ as a service and point it to your ezBEQ instance.
 
-# How to pull data into the service
+### How to pull data into the service
 
 The service call below uses template sensors that need to be created in Home Assistant. Whatever you call your template sensors is what you will need to reference in the service call under Services below.
 
@@ -29,13 +29,13 @@ My recommendation would be to do the following:
 2. Install Tautulli Active Streams integration into HAOS through HACS (GitHub - Richardvaio/Tautulli_Active_Streams: Real time tracking of media details, user activity, playback progress and so much more.) with the Plex token option. It brings through all the media information as attributes which can be used to create the sensors.
 3. Feed these into the ezBEQ integration using the template sensors you create.
 
-## Example Template Sensor Definitions
-# Template sensor for Title: 
+### Example Template Sensor Definitions
+#### Template sensor for Title: 
 
 {% set full_title = state_attr('sensor.plex_session_1_tautulli', 'full_title') | string %}
           {{ full_title.split('[')[0] | trim if full_title is not none else 'Unknown' }}
 
-# TMDB ID:
+#### TMDB ID:
 
 {% set guids = state_attr('sensor.plex_session_1_tautulli', 'guids') %}
           {% if guids is not none %}
@@ -44,7 +44,7 @@ My recommendation would be to do the following:
             unknown
           {% endif %}
 
-# Edition (when put into the title with [ ] brackets such as Aliens [Director's Cut])
+#### Edition (when put into the title with [ ] brackets such as Aliens [Director's Cut])
 
 {% set title = state_attr('sensor.plex_session_1_tautulli', 'full_title') %}
           {% set pattern = '\[(.*?)\]' %}
@@ -54,7 +54,7 @@ My recommendation would be to do the following:
             {{ '' }}
           {% endif %}
 
-# Codec:
+#### Codec:
 
 {% set codec_attr = state_attr('sensor.plex_session_1_tautulli', 'audio_codec') %}
 
@@ -98,7 +98,7 @@ My recommendation would be to do the following:
   {% endif %}
 {% endif %}
 
-# Year: 
+#### Year: 
 
 {{ state_attr('sensor.plex_session_1_tautulli', 'year') | string }}
 
