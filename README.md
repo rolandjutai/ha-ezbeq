@@ -134,7 +134,7 @@ data:
 You can use the below examples for loading BEQ profiles and unloading them.
 
 
-# Loading
+### Loading
 The reason to use the audio track for executing changes is to simplify the loading code: by detecting change, we unload and then try to load again. This happens when starting a stream, changing audio tracks or stopping a stream.
 
 alias: ezBEQ - Audio Track Change
@@ -167,8 +167,7 @@ actions:
 mode: restart
 
 
-# Unloading 
-
+### Unloading 
 
 alias: ezBEQ Unload Profile
 description: ""
@@ -198,7 +197,7 @@ actions:
 mode: single
 
 
-
+## Blueprints
 ### Load Blueprint
 
 You can add these blueprints to use in automations
