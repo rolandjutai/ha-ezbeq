@@ -113,16 +113,16 @@ My recommendation would be to do the following:
 
 This exposes a service to load a profile. Point it to the right sensors
 
-You can test with the developer tools by calling the service `ezbeq.load_beq_profile`
+You can test with the developer tools by calling the service `ezbeq.load_beq_profile`. Title and preferred_author sensors are optional and can be dropped from the service call. The other sensor data is critical to be able to load the correct profile.
 
 ```yaml
 action: ezbeq.load_beq_profile
 data:
-  tmdb_sensor: sensor.apple_tv_tmdb_id
-  year_sensor: sensor.apple_tv_year
-  codec_sensor: sensor.apple_tv_codec
-  edition_sensor: sensor.apple_tv_edition_title
-  title_sensor: sensor.apple_tv_title
+  tmdb_sensor: sensor.ezbeq_tv_tmdb_id
+  year_sensor: sensor.ezbeq_tv_year
+  codec_sensor: sensor.ezbeq_tv_codec
+  edition_sensor: sensor.ezbeq_tv_edition_title
+  title_sensor: sensor.ezbeq_tv_title
   preferred_author: aron7awol
   slots:
     - 1
