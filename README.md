@@ -9,12 +9,22 @@ Fixes:
 New Features:
   - Ability to pull the main BEQ image from the database and dispay it on the dashboard (requires a new text input helper called 'ezbeq_tv_beq_image_url' so it becomes input_text.ezbeq_tv_beq_image_url)
 
+## Example Images
+### No profile loaded
+
+<img width="1063" height="257" alt="Screenshot 2026-01-09 at 10 19 58 pm" src="https://github.com/user-attachments/assets/faa94932-0c04-40c8-a0a8-7b0fd1d7a99a" />
+
+
+### Profile loaded
+
+<img width="1066" height="759" alt="Screenshot 2026-01-09 at 10 20 38 pm" src="https://github.com/user-attachments/assets/ac7e135e-903e-4b5b-a3b6-5d8a4a258213" />
+
 ## Usage
 
-Blueprint
-plex integration
-media player
-automations
+ezBEQ Integration
+Plex integration
+Media player integration (if you know how to pull TMDB ID through)
+Automations
 
 ## Installation
 1. add the following as a repo into HAOS HACS: GitHub - iloveicedgreentea/ha-ezbeq: a home assistant integration to automate EzBEQ functions
