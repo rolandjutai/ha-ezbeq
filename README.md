@@ -5,6 +5,8 @@ This is a fixed integration based on the brilliant work at https://github.com/il
 Fixes:
 - BEQ Profiles with no MV changes now load normally
 - MV changes are NOT loaded into the MiniDSP by default. However, this is configurable using a variable in _init_.py by setting OVERRIDE_GAINS: bool = False.
+New Features:
+  - Ability to pull the main BEQ image from the database and dispay it on the dashboard (requires a new text input helper called 'ezbeq_tv_beq_image_url' so it becomes input_text.ezbeq_tv_beq_image_url)
 
 ## Usage
 
@@ -109,11 +111,16 @@ My recommendation would be to do the following:
 {{ state_attr('sensor.plex_session_1_tautulli', 'year') | string }}
 ```
 
+#### ezbeq_tv_beq_image_url
+
+Create a text input helper with the name ezbeq_tv_beq_image_url so it becomes input_text.ezbeq_tv_beq_image_url in home assistant.
+
 ## Services
 
 This exposes a service to load a profile. Point it to the right sensors
 
 You can test with the developer tools by calling the service `ezbeq.load_beq_profile`. Title and preferred_author sensors are optional and can be dropped from the service call. The other sensor data is critical to be able to load the correct profile.
+You must include the image_sensor part to be able to load the image URL into this sensor. You can then display the image using home assistant (see below).
 
 ```yaml
 action: ezbeq.load_beq_profile
@@ -128,6 +135,7 @@ data:
     - 1
   dry_run_mode: false
   skip_search: false
+  image_sensor: input_text.ezbeq_tv_beq_image_url
 
 ```
 
@@ -145,7 +153,7 @@ The reason to use the audio track for executing changes is to simplify the loadi
 
 ```yaml
 alias: ezBEQ - Audio Track Change
-description: Clears and Loads BEQ immediately on audio track change
+description: Clears BEQ immediately on audio change
 triggers:
   - entity_id: sensor.plex_session_1_tautulli
     attribute: audio_codec
@@ -157,7 +165,8 @@ conditions:
     entity_id: input_boolean.ezbeq_enable
     state: "on"
 actions:
-  - data: {}
+  - data:
+      image_sensor: input_text.ezbeq_tv_beq_image_url
     action: ezbeq.unload_beq_profile
   - delay: "00:00:05"
   - data:
@@ -165,12 +174,15 @@ actions:
       year_sensor: sensor.ezbeq_tv_year
       codec_sensor: sensor.ezbeq_tv_codec
       edition_sensor: sensor.ezbeq_tv_edition_title
-      title_sensor: sensor.ezbeq_tv_title
       slots:
         - 1
       dry_run_mode: false
       skip_search: false
+      image_sensor: input_text.ezbeq_tv_beq_image_url
     action: ezbeq.load_beq_profile
+  - data:
+      entity_id: sensor.master_current_profile
+    action: homeassistant.update_entity
 mode: restart
 ```
 
@@ -201,8 +213,29 @@ conditions: []
 actions:
   - action: ezbeq.unload_beq_profile
     metadata: {}
-    data: {}
+    data:
+      image_sensor: input_text.ezbeq_tv_beq_image_url
+  - data:
+      entity_id: sensor.master_current_profile
+    action: homeassistant.update_entity
 mode: single
+```
+
+### Displaying the loaded Profile on the Dashboard
+
+Add the sensor 'master_current_profile' to the dashboard
+The automations must force an update to this sensor at the end of a successful load or unload otherwise the sensor only updates every 15-30 seconds.
+
+### Displaying the BEQ image on the dashboard
+Use the following YAML to add a dashboard tile:
+
+```yaml
+type: markdown
+content: |
+  {% set url = states('input_text.ezbeq_tv_beq_image_url') %}
+  <img src="{{ url }}" width="600">
+grid_options:
+  columns: full
 ```
 
 ## Blueprints
