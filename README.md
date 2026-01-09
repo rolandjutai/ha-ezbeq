@@ -233,7 +233,7 @@ Add the sensor 'master_current_profile' to the dashboard
 The automations must force an update to this sensor at the end of a successful load or unload otherwise the sensor only updates every 15-30 seconds.
 
 ### Displaying the BEQ image on the dashboard
-Use the following YAML to add a dashboard tile:
+Use the following YAML to add a dashboard tile to display the BEQ profile image on your dashboard. This is helpful if you'd like to know what EQ is being applied at any moment, along with the profile name.
 
 ```yaml
 type: markdown
