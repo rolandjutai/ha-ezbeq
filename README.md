@@ -33,7 +33,7 @@ My recommendation would be to do the following:
 3. Feed these into the ezBEQ integration using the template sensors you create.
 
 ### Example Template Sensor Definitions
-#### Template sensor for Title: 
+#### Template sensor for Title (Name: sensor.ezbeq_tv_title)
 
 ```yaml
 {% set full_title = state_attr('sensor.plex_session_1_tautulli', 'full_title') | string %}
@@ -52,6 +52,7 @@ My recommendation would be to do the following:
 ```
 
 #### Edition (when put into the title with [ ] brackets such as Aliens [Director's Cut])
+(Name: sensor.ezbeq_tv_edition)
 
 ```yaml
 {% set title = state_attr('sensor.plex_session_1_tautulli', 'full_title') %}
@@ -62,7 +63,7 @@ My recommendation would be to do the following:
             {{ '' }}
           {% endif %}
 ```
-#### Codec:
+#### Codec (name: sensor.ezbeq_tv_codec)
 
 ```yaml
 {% set codec_attr = state_attr('sensor.plex_session_1_tautulli', 'audio_codec') %}
@@ -107,14 +108,18 @@ My recommendation would be to do the following:
   {% endif %}
 {% endif %}
 ```
-#### Year: 
+#### Release Year (name: sensor.ezbeq_tv_year)
 ```yaml
 {{ state_attr('sensor.plex_session_1_tautulli', 'year') | string }}
 ```
 
-#### ezbeq_tv_beq_image_url
+#### BEQ Image URL (name ezbeq_tv_beq_image_url)
 
 Create a text input helper with the name ezbeq_tv_beq_image_url so it becomes input_text.ezbeq_tv_beq_image_url in home assistant.
+
+#### EzBEQ Enable Button (name: ezbeq_enable)
+
+This is a button helper (input_boolean.ezbeq_enable) that enables you to switch ezBEQ on or off. If you want to use the example automations on this page, then you will need to create this sensor as well and include it on your dashboard so you can enable / disable BEQ loading right on your dashboard.
 
 ## Services
 
