@@ -7,7 +7,8 @@ Fixes:
 - MV changes are NOT loaded into the MiniDSP by default. However, this is configurable using a variable in _init_.py by setting OVERRIDE_GAINS: bool = False.
 
 New Features:
-  - Ability to pull the main BEQ image from the database and dispay it on the dashboard (requires a new text input helper called 'ezbeq_tv_beq_image_url' so it becomes input_text.ezbeq_tv_beq_image_url)
+  - Ability to pull the main BEQ image from the database and dispay it on the dashboard (requires a new text input helper called 'ezbeq_tv_beq_image_url' so it becomes input_text.ezbeq_tv_beq_image_url).
+  - Ability to search the catalogue based on audio codec substitutions defined in services.py IF the primary load fails to find a match. Can be enabled / disabled using enable_audio_codec_substitutions: true in the service call. Read more about this under Configurable Variables heading.
 
 ## Example Images
 ### No profile loaded
@@ -167,6 +168,10 @@ You can use the below examples for loading BEQ profiles and unloading them.
 ### Loading
 The reason to use the audio track for executing changes is to simplify the loading code: by detecting change, we unload and then try to load again. This happens when starting a stream, changing audio tracks or stopping a stream.
 
+Please note the following:
+- set enable_audio_codec_substitutions: true if you want to allow for codec substitutions. This is needed for various reasons, but you can read more about this under the Configurable Variables heading in this guide.
+- 
+
 ```yaml
 alias: ezBEQ - Audio Track Change
 description: Clears BEQ immediately on audio change
@@ -195,6 +200,7 @@ actions:
       dry_run_mode: false
       skip_search: false
       image_sensor: input_text.ezbeq_tv_beq_image_url
+      enable_audio_codec_substitutions: false
     action: ezbeq.load_beq_profile
   - data:
       entity_id: sensor.master_current_profile
@@ -245,12 +251,6 @@ The automations must force an update to this sensor at the end of a successful l
 ### Displaying the BEQ image on the dashboard
 Use the following YAML to add a dashboard tile to display the BEQ profile image on your dashboard. This is helpful if you'd like to know what EQ is being applied at any moment, along with the profile name.
 
-## Configurable variables within the code (in folder integrations/ezbeq)
-You can only configure these variables by using a code editor addon within HA or using SSH. There are a number of .py (python) files that the intgeration runs to enable its logic. These files have some variables that are configurable which are listed here.
-
-1. File: init.py variable OVERRIDE_GAINS: by setting this True, MV volume changes are NOT applied to the MiniDSP Input channels. By setting this to false, MV volume changes will be applied. This is enabled by default, which means there will be NO volume changes on the inputs. Make sure you have limiters set on your MiniDSP output channels for safety.
-2. File Services.py, variable CATALOG_CACHE_TTL: this is the amount of time in seconds that the BEQ database is cached on HA before it is refreshed. Please note that this only affects the BEQ image currently, but might affect other anscillary data over time if this integration is developed further. It does not affect the main BEQ catalogue used for loading the profiles. The default is one week, but you can change this if you need to. Restarting HA will also reset the cache.
-
 ```yaml
 type: markdown
 content: |
@@ -259,6 +259,13 @@ content: |
 grid_options:
   columns: full
 ```
+
+## Configurable variables within the code (in folder integrations/ezbeq)
+You can only configure these variables by using a code editor addon within HA or using SSH. There are a number of .py (python) files that the intgeration runs to enable its logic. These files have some variables that are configurable which are listed here.
+
+1. File: init.py variable OVERRIDE_GAINS: by setting this True, MV volume changes are NOT applied to the MiniDSP Input channels. By setting this to false, MV volume changes will be applied. This is enabled by default, which means there will be NO volume changes on the inputs. Make sure you have limiters set on your MiniDSP output channels for safety.
+2. File Services.py, variable CATALOG_CACHE_TTL: this is the amount of time in seconds that the BEQ database is cached on HA before it is refreshed. Please note that this only affects the BEQ image currently, but might affect other anscillary data over time if this integration is developed further. It does not affect the main BEQ catalogue used for loading the profiles. The default is one week, but you can change this if you need to. Restarting HA will also reset the cache.
+3. File Services.py, variable SUBSTITUTION_RULES. these rules allow you to search the catalogue again for a match using a different / substituted audio codec IF the primary load did not find a match. This allows for substituting audio codec data within the load itself and is useful when the sensors don't provide Atmos, DTS-X, Auro-3D but the database expects those matches. Also, this is useful when the database contains errors or codecs that actually are suitable for a load using the primary audio track. Use this with caution as incorrect matches or lists can result in loading the incorrect data. This is why this can be enabled or disabled within the service call itself using the enable_audio_codec_substitutions: false flag. It is enabled by passing enable_audio_codec_substitutions: true to the service.
 
 ## Blueprints
 
