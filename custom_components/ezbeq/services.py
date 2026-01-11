@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-import time  # NEW
+import time
 from typing import Any, List, Dict
 
 from homeassistant.core import HomeAssistant, ServiceCall
@@ -16,6 +16,9 @@ _LOGGER = logging.getLogger(__name__)
 CATALOG_URL = "https://beqcatalogue.readthedocs.io/en/latest/database.json"
 CATALOG_CACHE_TTL = 7 * 24 * 3600  # 1 week
 
+STATUS_SENSOR_ID = "sensor.ezbeq_load_status"
+STATUS_FRIENDLY_NAME = "ezBEQ Load Status"
+
 # ---------------------------------------------------------------------------
 # Substitution rules (ordered). Users can edit these lists directly.
 # Each rule: enabled, inputs (incoming codec matches any), outputs (try in order).
@@ -25,12 +28,12 @@ SUBSTITUTION_RULES: List[Dict[str, Any]] = [
     {
         "enabled": True,
         "inputs": ["Atmos"],
-        "outputs": ["TrueHD 7.1","TrueHD Atmos" ,"TrueHD 5.1","DD+ Atmos"],
+        "outputs": ["TrueHD 7.1", "TrueHD Atmos", "TrueHD 5.1", "DD+ Atmos"],
     },
     {
         "enabled": True,
         "inputs": ["dts-hd ma 7.1"],
-        "outputs": ["dts-x", "dts:x", "dts-x hr", "dts-hd ma 5.1","dts.hd ma 5.1"],
+        "outputs": ["dts-x", "dts:x", "dts-x hr", "dts-hd ma 5.1", "dts.hd ma 5.1"],
     },
     {
         "enabled": True,
@@ -40,17 +43,17 @@ SUBSTITUTION_RULES: List[Dict[str, Any]] = [
     {
         "enabled": True,
         "inputs": ["DTS 5.1", "DTS 6.1"],
-        "outputs": ["DTS-HD MA 5.1","DTS-HD MA 7.1", "DTS-ES 5.1", "DTS-ES 6.1", "DTS-EX 5.1"],
+        "outputs": ["DTS-HD MA 5.1", "DTS-HD MA 7.1", "DTS-ES 5.1", "DTS-ES 6.1", "DTS-EX 5.1"],
     },
     {
         "enabled": True,
         "inputs": ["DTS-HD MA 5.1", "DTS-HD MA 7.1"],
-        "outputs": ["DTS-HD MA 5.1","DTS-HD MA 7.1"],
+        "outputs": ["DTS-HD MA 5.1", "DTS-HD MA 7.1"],
     },
     {
         "enabled": True,
         "inputs": ["PCM"],
-        "outputs": ["LPCM 5.1","LPCM 7.1","LPCM 2.0","LPCM 1.0"],
+        "outputs": ["LPCM 5.1", "LPCM 7.1", "LPCM 2.0", "LPCM 1.0"],
     },
     # Add more rules here as needed.
 ]
@@ -60,6 +63,23 @@ async def async_setup_services(
     hass: HomeAssistant, coordinator: EzBEQCoordinator, domain: str
 ) -> None:
     """Set up the EzBEQ services."""
+
+    # ---------- Status helper ----------
+    def _utc_timestamp() -> str:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+    def _set_status(state: str, **attrs: Any) -> None:
+        """Create/update the status sensor with fixed entity_id."""
+        base_attrs = {
+            "friendly_name": STATUS_FRIENDLY_NAME,
+            "last_changed": _utc_timestamp(),
+            "stage": state,
+        }
+        base_attrs.update({k: v for k, v in attrs.items() if v is not None})
+        hass.states.async_set(STATUS_SENSOR_ID, state, base_attrs)
+
+    # Initialize the status sensor
+    _set_status("idle")
 
     # ---------- Catalogue fetcher (shared) ----------
     async def _get_catalog_items() -> list[dict] | None:
@@ -90,26 +110,28 @@ async def async_setup_services(
             domain_cache["catalog_cache"] = {"ts": now, "items": items}
         return items
 
-    # ---------- Image lookup ----------
-    async def fetch_first_image_url(
-        tmdb: str, codec: str, edition: str, year: int, title: str
-    ) -> str | None:
-        """Fetch the first image URL from the BEQ catalogue."""
-        items = await _get_catalog_items()
-        if not items:
-            return None
+    # ---------- Catalogue match helpers ----------
+    def _normalize_codec(value: str | None) -> str:
+        return (value or "").strip().lower()
 
+    def _match_catalog_item(
+        items: list[dict],
+        tmdb: str,
+        codec: str,
+        edition: str,
+        year: int,
+        title: str,
+    ) -> dict | None:
         tmdb_str = str(tmdb).strip()
-        codec_norm = (codec or "").strip().lower()
+        codec_norm = _normalize_codec(codec)
         edition_norm = (edition or "").strip().lower()
         year_str = str(year).strip()
         title_norm = (title or "").strip().lower()
 
-        def _get_images(item: dict) -> list[str]:
-            imgs = item.get("images") or []
-            if isinstance(imgs, str):
-                imgs = [imgs]
-            return imgs
+        def _edition_matches(item: dict) -> bool:
+            if not edition_norm:
+                return True
+            return (item.get("edition", "") or "").strip().lower() == edition_norm
 
         def _codec_matches(item: dict) -> bool:
             audio_types = item.get("audioTypes") or []
@@ -117,19 +139,10 @@ async def async_setup_services(
                 audio_types = [audio_types]
             return any((a or "").strip().lower() == codec_norm for a in audio_types)
 
-        def _edition_matches(item: dict) -> bool:
-            if not edition_norm:
-                return True  # ignore edition if empty
-            return (item.get("edition", "") or "").strip().lower() == edition_norm
-
-        # Match by TMDB id (field is "theMovieDB" in this catalogue), codec, and edition (if provided)
         for item in items:
             if str(item.get("theMovieDB", "")).strip() == tmdb_str and _codec_matches(item) and _edition_matches(item):
-                imgs = _get_images(item)
-                if imgs:
-                    return imgs[0]
+                return item
 
-        # Fallback: match by title + year + codec + edition
         for item in items:
             if (
                 str(item.get("year", "")).strip() == year_str
@@ -137,16 +150,37 @@ async def async_setup_services(
                 and _codec_matches(item)
                 and _edition_matches(item)
             ):
-                imgs = _get_images(item)
-                if imgs:
-                    return imgs[0]
-
+                return item
         return None
 
-    # ---------- Substitution helpers ----------
-    def _normalize_codec(value: str | None) -> str:
-        return (value or "").strip().lower()
+    def _extract_author(item: dict | None) -> str:
+        if not item:
+            return ""
+        author = item.get("author") or item.get("authors") or ""
+        if isinstance(author, list):
+            return ", ".join(str(a) for a in author if a)
+        return str(author)
 
+    # ---------- Image lookup ----------
+    async def fetch_first_image_url(
+        tmdb: str, codec: str, edition: str, year: int, title: str
+    ) -> tuple[str | None, str]:
+        """Fetch the first image URL and author from the BEQ catalogue."""
+        items = await _get_catalog_items()
+        if not items:
+            return None, ""
+
+        match = _match_catalog_item(items, tmdb, codec, edition, year, title)
+        if not match:
+            return None, ""
+
+        imgs = match.get("images") or []
+        if isinstance(imgs, str):
+            imgs = [imgs]
+        url = imgs[0] if imgs else None
+        return url, _extract_author(match)
+
+    # ---------- Substitution helpers ----------
     def _rule_applies(rule: Dict[str, Any], original_codec_norm: str) -> bool:
         if not rule.get("enabled", False):
             return False
@@ -211,18 +245,58 @@ async def async_setup_services(
             raise HomeAssistantError(f"Invalid sensor data: {e}") from e
 
         used_codec = search_request.codec  # Track the codec actually loaded
+        author = ""
+        catalog_items: list[dict] | None = None
+
+        _set_status(
+            "loading_primary",
+            profile=search_request.title,
+            codec=used_codec,
+            edition=search_request.edition,
+            slots=search_request.slots,
+        )
 
         try:
             await coordinator.client.load_beq_profile(search_request)
             _LOGGER.info("Successfully loaded BEQ profile")
+            # Try to get author info (best-effort)
+            catalog_items = await _get_catalog_items()
+            if catalog_items:
+                match = _match_catalog_item(
+                    catalog_items,
+                    search_request.tmdb,
+                    used_codec,
+                    search_request.edition,
+                    search_request.year,
+                    search_request.title or "",
+                )
+                author = _extract_author(match)
         except Exception as e:
             _LOGGER.warning("Primary load failed for codec '%s': %s", search_request.codec, e)
             if not enable_audio_codec_subs:
+                _set_status(
+                    "load_fail",
+                    reason=str(e),
+                    profile=search_request.title,
+                    codec=used_codec,
+                    edition=search_request.edition,
+                    slots=search_request.slots,
+                )
                 raise HomeAssistantError(f"Failed to load BEQ profile: {e}") from e
 
-            items = await _get_catalog_items()
-            if not items:
-                raise HomeAssistantError(f"Failed to load BEQ profile (no catalogue for substitutions): {e}") from e
+            catalog_items = await _get_catalog_items()
+            if not catalog_items:
+                _set_status(
+                    "load_fail",
+                    reason=f"No catalogue for substitutions: {e}",
+                    profile=search_request.title,
+                    codec=used_codec,
+                    edition=search_request.edition,
+                    slots=search_request.slots,
+                )
+                raise HomeAssistantError(
+                    f"Failed to load BEQ profile (no catalogue for substitutions): {e}"
+                ) from e
 
             original_codec_norm = _normalize_codec(search_request.codec)
             substitute_found = False
@@ -234,14 +308,30 @@ async def async_setup_services(
                 for cand in outputs:
                     if cand == original_codec_norm:
                         continue  # skip identical
-                    if not _catalog_has_codec(items, search_request.tmdb, search_request.edition, cand):
+                    if not _catalog_has_codec(catalog_items, search_request.tmdb, search_request.edition, cand):
                         continue
                     _LOGGER.info("Retrying load with substitute codec '%s'", cand)
                     search_request.codec = cand
                     used_codec = cand
+                    _set_status(
+                        "loading_secondary",
+                        profile=search_request.title,
+                        codec=used_codec,
+                        edition=search_request.edition,
+                        slots=search_request.slots,
+                    )
                     try:
                         await coordinator.client.load_beq_profile(search_request)
                         _LOGGER.info("Successfully loaded BEQ profile after substitution")
+                        match = _match_catalog_item(
+                            catalog_items,
+                            search_request.tmdb,
+                            used_codec,
+                            search_request.edition,
+                            search_request.year,
+                            search_request.title or "",
+                        )
+                        author = _extract_author(match)
                         substitute_found = True
                         break
                     except Exception as e2:
@@ -251,18 +341,32 @@ async def async_setup_services(
                     break
 
             if not substitute_found:
+                _set_status(
+                    "load_fail",
+                    reason=str(e),
+                    profile=search_request.title,
+                    codec=used_codec,
+                    edition=search_request.edition,
+                    slots=search_request.slots,
+                )
                 raise HomeAssistantError(f"Failed to load BEQ profile after substitutions: {e}") from e
 
         # Populate image sensor with first image URL (optional)
         image_sensor = call.data.get("image_sensor")
         if image_sensor:
-            image_url = await fetch_first_image_url(
-                tmdb=search_request.tmdb,
-                codec=used_codec,
-                edition=search_request.edition,
-                year=search_request.year,
-                title=search_request.title or "",
-            )
+            # Reuse catalog_items if already fetched; otherwise fetch
+            if catalog_items is None:
+                catalog_items = await _get_catalog_items()
+            image_url = None
+            author_from_image = ""
+            if catalog_items is not None:
+                image_url, author_from_image = await fetch_first_image_url(
+                    tmdb=search_request.tmdb,
+                    codec=used_codec,
+                    edition=search_request.edition,
+                    year=search_request.year,
+                    title=search_request.title or "",
+                )
             hass.states.async_set(
                 image_sensor,
                 image_url or "Not Found",
@@ -270,22 +374,36 @@ async def async_setup_services(
             )
             if not image_url:
                 _LOGGER.info("No image found in BEQ catalogue for tmdb=%s", search_request.tmdb)
+            # Prefer author we already found; fall back to the one from image lookup
+            if not author:
+                author = author_from_image
+
+        _set_status(
+            "load_success",
+            profile=search_request.title,
+            codec=used_codec,
+            edition=search_request.edition,
+            slots=search_request.slots,
+            author=author,
+        )
 
     # ---------- Service: unload_beq_profile ----------
     async def unload_beq_profile(call: ServiceCall) -> None:
         """Unload the BEQ profile."""
+        slots = call.data.get("slots", [1])
+        _set_status("unloading", slots=slots)
         try:
-            slots = call.data.get("slots", [1])
             search_request = SearchRequest(
                 preferred_author="",
                 edition="",
-                tmdb="",  # These fields are not used for unloading, but are required by the SearchRequest model
+                tmdb="",  # Not used for unloading, but required by the model
                 year=0,
                 codec="",
                 slots=slots,
             )
             await coordinator.client.unload_beq_profile(search_request)
             _LOGGER.info("Successfully unloaded BEQ profile")
+            _set_status("unload_success", slots=slots)
         except Exception as e:
             resp = getattr(e, "response", None)
             if resp is not None:
@@ -300,13 +418,15 @@ async def async_setup_services(
                     _LOGGER.error("Failed to unload BEQ profile: %s (response present but unreadable)", e)
             else:
                 _LOGGER.error("Failed to unload BEQ profile: %s", e)
+            _set_status("unload_fail", reason=str(e), slots=slots)
             raise HomeAssistantError(f"Failed to unload BEQ profile: {e}") from e
-        # NEW: clear the image sensor, if provided
+
+        # Clear the image sensor, if provided
         image_sensor = call.data.get("image_sensor")
         if image_sensor:
             hass.states.async_set(
                 image_sensor,
-                "",  # empty state to indicate cleared
+                "",
                 {"source": "beq_catalogue", "tmdb": ""},
             )
 
@@ -317,3 +437,4 @@ async def async_setup_services(
 async def async_unload_services(hass: HomeAssistant, domain: str) -> None:
     """Unload EzBEQ services."""
     hass.services.async_remove(domain, "load_beq_profile")
+    hass.services.async_remove(domain, "unload_beq_profile")
