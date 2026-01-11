@@ -21,6 +21,10 @@ New Features:
 
 <img width="1066" height="759" alt="Screenshot 2026-01-09 at 10 20 38 pm" src="https://github.com/user-attachments/assets/ac7e135e-903e-4b5b-a3b6-5d8a4a258213" />
 
+### Added Load Status Updates
+
+<img width="515" height="752" alt="Screenshot 2026-01-11 at 2 57 54 pm" src="https://github.com/user-attachments/assets/0c835265-5cd1-438d-b383-7c0bee860947" />
+
 ## Usage
 
 ezBEQ Integration
