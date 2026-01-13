@@ -1,18 +1,20 @@
 """The ezbeq Profile Loader integration."""
-
 from __future__ import annotations
 
 import logging
 
-from pyezbeq.ezbeq import EzbeqClient
-from pyezbeq.models import SearchRequest  # kept import (may be unused)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
-from homeassistant.core import HomeAssistant, ServiceCall  # kept import (may be unused)
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
+
+from pyezbeq.ezbeq import EzbeqClient
+from pyezbeq.models import SearchRequest  # kept import (may be unused)
 from homeassistant.exceptions import HomeAssistantError  # kept import (may be unused)
+from homeassistant.core import ServiceCall  # kept import (may be unused)
 
 from .services import async_setup_services, async_unload_services
+from .devices import async_setup_devices, DEFAULT_REFRESH_INTERVAL_SECS
 from .const import DOMAIN
 from .coordinator import EzBEQCoordinator
 
@@ -35,6 +37,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> boo
     """Set up ezbeq Profile Loader from a config entry."""
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
+
+    # Store the resolved base URL for use elsewhere
+    base_url = f"http://{host}:{port}"
+    hass.data.setdefault(DOMAIN, {})["base_url"] = base_url
+
+    # TEMP: publish a debug sensor so you can see the URL in the UI
+    hass.states.async_set("sensor.ezbeq_base_url_debug", base_url, {"source": "init.py"})
 
     client = EzbeqClient(host=host, port=port, logger=_LOGGER)
 
@@ -71,12 +80,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> boo
         sw_version=coordinator.client.version,
     )
 
+    # Start devices sensor + periodic refresh
+    devices_cleanup = await async_setup_devices(
+        hass,
+        coordinator,
+        domain=DOMAIN,
+        update_interval_secs=DEFAULT_REFRESH_INTERVAL_SECS,
+    )
+    hass.data[DOMAIN]["devices_cleanup"] = devices_cleanup
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await async_setup_services(hass, coordinator, domain=DOMAIN)
     _LOGGER.debug(
-        "Finished setting up ezbeq from a config entry (override_gains=%s, values=%s)",
+        "Finished setting up ezbeq (override_gains=%s, values=%s, base_url=%s)",
         OVERRIDE_GAINS,
         OVERRIDE_GAINS_VALUES,
+        base_url,
     )
     return True
 
@@ -90,4 +109,13 @@ async def async_unload_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> bo
         await coordinator.client.client.aclose()
 
     await async_unload_services(hass, DOMAIN)
+
+    # stop devices sensor refresh
+    cleanup = (hass.data.get(DOMAIN) or {}).pop("devices_cleanup", None)
+    if callable(cleanup):
+        cleanup()
+
+    # Optional: clear the debug sensor when unloading
+    hass.states.async_set("sensor.ezbeq_base_url_debug", None, {"source": "init.py"})
+
     return unload_ok
