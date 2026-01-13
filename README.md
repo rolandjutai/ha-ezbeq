@@ -333,7 +333,9 @@ Option 2: Full list of attributes including newly added ones:
 **Slots:** {{ g.slots if g.slots is defined else 'n/a' }}  
 **Author:** {{ g.author if g.author is defined and g.author else 'n/a' }}
 {% if g.reason is defined %} **Reason:** {{ g.reason }} {% endif %}
+
 ---
+
 **TMDB ID:** {{ g.tmdb_id if g.tmdb_id is defined else 'n/a' }}  
 **Title:** {{ g.title if g.title is defined else 'n/a' }}  
 **Alt title:** {{ g.alt_title if g.alt_title is defined else 'n/a' }} 
