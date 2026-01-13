@@ -10,6 +10,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from pyezbeq.models import SearchRequest
 
 from .coordinator import EzBEQCoordinator
+from .devices import async_refresh_devices_sensor  # unchanged import
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -161,6 +162,36 @@ async def async_setup_services(
             return ", ".join(str(a) for a in author if a)
         return str(author)
 
+    def _extract_extra_fields(item: dict | None) -> Dict[str, Any]:
+        """Pull additional fields for the status sensor; safe defaults if missing."""
+        if not item:
+            return {}
+        imgs = item.get("images") or []
+        if isinstance(imgs, str):
+            imgs = [imgs]
+        runtime_raw = item.get("runtime")
+        try:
+            runtime_minutes = int(runtime_raw) if runtime_raw is not None else None
+        except (TypeError, ValueError):
+            runtime_minutes = None
+        return {
+            "tmdb_id": item.get("theMovieDB") or "",
+            "title": item.get("title") or "",
+            "alt_title": item.get("altTitle") or "",
+            "source": item.get("source") or "",
+            "content_type": item.get("content_type") or "",
+            "language": item.get("language") or "",
+            "mv_offset": float(item.get("mv")) if str(item.get("mv")).strip() not in ("", "None", "null") else None,
+            "audio_types": item.get("audioTypes") or [],
+            "warning": item.get("warning") or "",
+            "note": item.get("note") or "",
+            "image1": imgs[0] if len(imgs) >= 1 else "",
+            "image2": imgs[1] if len(imgs) >= 2 else "",
+            "runtime_minutes": runtime_minutes,
+            "genres": item.get("genres") or [],
+            "created_at": item.get("created_at"),
+        }
+
     # ---------- Image lookup ----------
     async def fetch_first_image_url(
         tmdb: str, codec: str, edition: str, year: int, title: str
@@ -247,6 +278,7 @@ async def async_setup_services(
         used_codec = search_request.codec  # Track the codec actually loaded
         author = ""
         catalog_items: list[dict] | None = None
+        matched_item: dict | None = None  # keep the match for extra attrs
 
         _set_status(
             "loading_primary",
@@ -262,7 +294,7 @@ async def async_setup_services(
             # Try to get author info (best-effort)
             catalog_items = await _get_catalog_items()
             if catalog_items:
-                match = _match_catalog_item(
+                matched_item = _match_catalog_item(
                     catalog_items,
                     search_request.tmdb,
                     used_codec,
@@ -270,7 +302,7 @@ async def async_setup_services(
                     search_request.year,
                     search_request.title or "",
                 )
-                author = _extract_author(match)
+                author = _extract_author(matched_item)
         except Exception as e:
             _LOGGER.warning("Primary load failed for codec '%s': %s", search_request.codec, e)
             if not enable_audio_codec_subs:
@@ -323,7 +355,7 @@ async def async_setup_services(
                     try:
                         await coordinator.client.load_beq_profile(search_request)
                         _LOGGER.info("Successfully loaded BEQ profile after substitution")
-                        match = _match_catalog_item(
+                        matched_item = _match_catalog_item(
                             catalog_items,
                             search_request.tmdb,
                             used_codec,
@@ -331,7 +363,7 @@ async def async_setup_services(
                             search_request.year,
                             search_request.title or "",
                         )
-                        author = _extract_author(match)
+                        author = _extract_author(matched_item)
                         substitute_found = True
                         break
                     except Exception as e2:
@@ -378,6 +410,8 @@ async def async_setup_services(
             if not author:
                 author = author_from_image
 
+        extra_attrs = _extract_extra_fields(matched_item)
+
         _set_status(
             "load_success",
             profile=search_request.title,
@@ -385,7 +419,11 @@ async def async_setup_services(
             edition=search_request.edition,
             slots=search_request.slots,
             author=author,
+            **extra_attrs,
         )
+
+        # MiniDSP may have changed: refresh snapshot (fire-and-forget)
+        hass.async_create_task(async_refresh_devices_sensor(hass, coordinator, domain))
 
     # ---------- Service: unload_beq_profile ----------
     async def unload_beq_profile(call: ServiceCall) -> None:
@@ -420,6 +458,9 @@ async def async_setup_services(
                 _LOGGER.error("Failed to unload BEQ profile: %s", e)
             _set_status("unload_fail", reason=str(e), slots=slots)
             raise HomeAssistantError(f"Failed to unload BEQ profile: {e}") from e
+        finally:
+            # Always refresh in the background
+            hass.async_create_task(async_refresh_devices_sensor(hass, coordinator, domain))
 
         # Clear the image sensor, if provided
         image_sensor = call.data.get("image_sensor")
