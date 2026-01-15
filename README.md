@@ -7,10 +7,11 @@ Fixes:
 - MV changes are NOT loaded into the MiniDSP by default. However, this is configurable using a variable in _init_.py by setting OVERRIDE_GAINS: bool = False.
 
 New Features:
-  - Ability to pull the main BEQ image from the database and dispay it on the dashboard (requires a new text input helper called 'ezbeq_tv_beq_image_url' so it becomes input_text.ezbeq_tv_beq_image_url).
+  - Ability to pull the BEQ images from the database and dispay it on the dashboard (now part of the load status attributes for both images from v3.0.0).
   - Ability to search the catalogue based on audio codec substitutions defined in services.py IF the primary load fails to find a match. Can be enabled / disabled using enable_audio_codec_substitutions: true in the service call. Read more about this under Configurable Variables heading.
-  - Status updates are available by reading the attributes of a new sensor called sensor.ezbeq_load_status. Now with quite detailed attributes for the load including the MV volume change. This can be used to set (or limit) the volume on your amplifier through Denon / Marantz or other AVR brand integrations.
-  - See the full status of the MiniDSP device you have ezBEQ connected to, through the attributes of sensor.ezbeq_devices.
+  - Status updates are available by reading the attributes of a new sensor called sensor.ezbeq_load_status. Now (v2.0.0) with quite detailed attributes for the load including the MV volume change. This can be used to set (or limit) the volume on your amplifier through Denon / Marantz or other AVR brand integrations.
+  - See the full status of the MiniDSP device you have ezBEQ connected to, through the attributes of sensor.ezbeq_devices. (v2.0.0)
+  - A huge update to enable manual search and selection of BEQ profiles by passing a TMDB ID (list) or a (partial) Title (list) using user-created template sensors. This allows for the user to widen the search for BEQ profiles if the automatic search and match doesn't yield results. This might be especially important for TV shows where multiple TMDB IDs might be assigned to the same show in Plex (yay for usability on Plex's part). While this might seem like a re-implementation of the ezBEQ web front-end, the web front-end doesn't allow passing in IDs for automatic searches, which made this a bit of a necessity for a full-featured HA custom component. (v3.0.0) - detailed at the very end of this guide for those that want to use this feature.
 
 ## Example Images
 ### No profile loaded
@@ -137,10 +138,6 @@ The below definitions are given as exmaples when using Tautulli Active Streams H
 {{ state_attr('sensor.plex_session_1_tautulli', 'year') | string }}
 ```
 
-#### BEQ Image URL (name ezbeq_tv_beq_image_url)
-
-Create a text input helper with the name ezbeq_tv_beq_image_url so it becomes input_text.ezbeq_tv_beq_image_url in home assistant. This will have the URL of the BEQ image for the actively loaded profile that you can use to display the image.
-
 #### EzBEQ Enable Button (name: ezbeq_enable)
 
 This is a button helper (input_boolean.ezbeq_enable) that enables you to switch ezBEQ on or off. If you want to use the example automations on this page, then you will need to create this sensor as well and include it on your dashboard so you can enable / disable BEQ loading right on your dashboard.
@@ -165,8 +162,6 @@ data:
     - 1
   dry_run_mode: false
   skip_search: false
-  image_sensor: input_text.ezbeq_tv_beq_image_url
-
 ```
 
 `unload_beq_profile` does not need any data
@@ -305,6 +300,7 @@ The available attributes for the ezbeq_load_status sensor is as follows:
 | **New** `runtime_minutes` | int or null | Runtime in minutes. | On `load_success` (when matched). |
 | **New** `genres` | list[string] | Genres from catalogue. | On `load_success` (when matched). |
 | **New** `created_at` | int or null | Catalogue creation timestamp (epoch seconds). | On `load_success` (when matched). |
+| **New** 'manual_load' | bool | whether the load was manual or automatic | When a manual load is sent to the loader. |
 
 You can add the following markdown card onto the dashboard to display the loading status and its attributes. Delete the lines you don't want to see.
 Option 1: Simple YAML
@@ -318,7 +314,8 @@ content: |
   **Codec:** {{ state_attr('sensor.ezbeq_load_status', 'codec') }}
   **Slots:** {{ state_attr('sensor.ezbeq_load_status', 'slots') }}
   **Reason:** {{ state_attr('sensor.ezbeq_load_status', 'reason') }}
-  **Updated:** {{ state_attr('sensor.ezbeq_load_status', 'last_changed') 
+  **Updated:** {{ state_attr('sensor.ezbeq_load_status', 'last_changed')
+  **Manual Loal:** {{state_attr('sensor.ezbeq_load_status', 'manual_load') }}
   ```
 
 Option 2: Full list of attributes including newly added ones:
@@ -381,19 +378,8 @@ entities:
     name: Last changed
 ```
 
-### Displaying the BEQ image on the Dashboard
-You have two options to do this: 
-1. With the new image attributes above.
-2. With a sensor that's specified during load. Use the following YAML to add a dashboard tile to display the BEQ profile image on your dashboard. This is helpful if you'd like to know what EQ is being applied at any moment, along with the profile name.
-
-```yaml
-type: markdown
-content: |
-  {% set url = states('input_text.ezbeq_tv_beq_image_url') %}
-  <img src="{{ url }}" width="600">
-grid_options:
-  columns: full
-```
+### Displaying the BEQ images on the Dashboard
+This is done using the load status attributes detailed above. The other method is now deprecated.
 
 ### Displaying the status of your MiniDSP device
 
@@ -476,3 +462,125 @@ You can only configure these variables by using a code editor addon within HA or
 2. File Services.py, variable CATALOG_CACHE_TTL: this is the amount of time in seconds that the BEQ database is cached on HA before it is refreshed. Please note that this only affects the BEQ image currently, but might affect other anscillary data over time if this integration is developed further. It does not affect the main BEQ catalogue used for loading the profiles. The default is one week, but you can change this if you need to. Restarting HA will also reset the cache.
 3. File Services.py, variable SUBSTITUTION_RULES. these rules allow you to search the catalogue again for a match using a different / substituted audio codec IF the primary load did not find a match. This allows for substituting audio codec data within the load itself and is useful when the sensors don't provide Atmos, DTS-X, Auro-3D but the database expects those matches. Also, this is useful when the database contains errors or codecs that actually are suitable for a load using the primary audio track. Use this with caution as incorrect matches or lists can result in loading the incorrect data. This is why this can be enabled or disabled within the service call itself using the enable_audio_codec_substitutions: false flag. It is enabled by passing enable_audio_codec_substitutions: true to the service.
 
+# Configuring ezBEQ for manual search and loading of BEQ profiles - GUIDE STILL IN BETA
+You might want to configure a manual loading dashboard like the below.
+
+<img width="1059" height="810" alt="Screenshot 2026-01-15 at 7 18 49 pm" src="https://github.com/user-attachments/assets/91456b99-1c65-40e5-9fb6-49974009e2db" />
+
+This allows you to do BEQ profile loading manually using fuzzy search logic with a (list of) TMDB ID(s) and a (list of) Titles or partial title(s) of your choosings that you pass to this module. This allows for some quick searches based on what's playing and loading of an alternate BEQ that wasn't matched. However, you can also enable text-fields as input fields into the sensors if you so wish to allow for any sort of search, but this is not something I give examples of. However, the module is configurable enough that you can pass to the sensors what you wish.
+
+## What the integration provides out‑of‑the‑box
+- `switch.ezbeq_candidate_search_enabled` — turns manual search on/off (state is cleared when off).
+- `sensor.ezbeq_candidate_status` — shows the current manual-load stage/reason/candidate counts.
+- `sensor.ezbeq_candidate_details` — holds the currently highlighted catalogue candidate and its attributes (title, year, edition, audio, author, mv, images, etc.).
+
+These are created by the integration.
+
+## What **you** must provide for searching
+The integration **reads** (but does not create) two text-like entities. You can use `input_text`, a template sensor, MQTT sensor, etc.—anything whose state is a string.
+
+- `sensor.ezbeq_candidate_tmdb_ids` (`SENSOR_TMDB_IDS`)
+  - State: comma or semicolon list of TMDB IDs (e.g., `603,155`).
+- `sensor.ezbeq_candidate_titles` (`SENSOR_TITLES`)
+  - State: comma or semicolon list of title prefixes (fallback if TMDB is missing).
+
+Populate these via your own YAML and / or automations. Examplea are shown below:
+
+<placeholder>
+
+## Entities used when loading (auto-created on first use)
+When you call `ezbeq.load_selected_candidate`, you pass entity IDs for the playback metadata. The integration will `async_set` them (so they are created dynamically if they don’t exist):
+
+- `sensor.ezbeq_candidate_tmdb_id`
+- `sensor.ezbeq_candidate_year`
+- `sensor.ezbeq_candidate_codec`
+- `sensor.ezbeq_candidate_edition` (optional)
+- `sensor.ezbeq_candidate_title` (optional)
+
+If you prefer different IDs, pass your own in the service data; the integration will write to those.
+
+## Service flow
+1) Ensure `switch.ezbeq_candidate_search_enabled` is **on**.
+2) Set `sensor.ezbeq_candidate_tmdb_ids` (and optionally `sensor.ezbeq_candidate_titles`).
+3) Call `ezbeq.find_candidates`.
+4) (Optional) Call `ezbeq.select_candidate` with a specific `label`; otherwise the first result is used.
+5) Call `ezbeq.load_selected_candidate`, providing the five playback entity IDs above (or your own choices).
+
+## Example dashboard controls
+
+### Button to load the currently selected candidate
+```yaml
+type: button
+name: Load Selected Candidate
+icon: mdi:cloud-download
+tap_action:
+  action: call-service
+  service: ezbeq.load_selected_candidate
+  service_data:
+    tmdb_sensor: sensor.ezbeq_candidate_tmdb_id
+    year_sensor: sensor.ezbeq_candidate_year
+    codec_sensor: sensor.ezbeq_candidate_codec
+    edition_sensor: sensor.ezbeq_candidate_edition
+    title_sensor: sensor.ezbeq_candidate_title
+    slots: [1]
+    enable_audio_codec_substitutions: false
+```
+
+### Entities card for search and status
+```yaml
+type: entities
+title: ezBEQ Manual Load
+entities:
+  - entity: switch.ezbeq_candidate_search_enabled
+    name: Enable manual search
+  - entity: sensor.ezbeq_candidate_tmdb_ids
+    name: TMDB IDs (comma/semicolon)
+  - entity: sensor.ezbeq_candidate_titles
+    name: Title prefixes
+  - type: call-service
+    name: Find candidates
+    icon: mdi:magnify
+    action_name: Run
+    service: ezbeq.find_candidates
+    data: {}
+  - type: call-service
+    name: Load selected candidate
+    icon: mdi:cloud-download
+    action_name: Load
+    service: ezbeq.load_selected_candidate
+    data:
+      tmdb_sensor: sensor.ezbeq_candidate_tmdb_id
+      year_sensor: sensor.ezbeq_candidate_year
+      codec_sensor: sensor.ezbeq_candidate_codec
+      edition_sensor: sensor.ezbeq_candidate_edition
+      title_sensor: sensor.ezbeq_candidate_title
+      slots: [1]
+      enable_audio_codec_substitutions: false
+```
+
+### Markdown card for status/details
+```yaml
+type: markdown
+title: ezBEQ Manual Status
+content: |
+  **Search enabled:** {{ states('switch.ezbeq_candidate_search_enabled') }}
+  **Status:** {{ states('sensor.ezbeq_candidate_status') }}
+  - Stage: {{ state_attr('sensor.ezbeq_candidate_status','stage') }}
+  - Reason: {{ state_attr('sensor.ezbeq_candidate_status','reason') }}
+  - Candidates: {{ state_attr('sensor.ezbeq_candidate_status','candidates') }}
+  - Selected: {{ state_attr('sensor.ezbeq_candidate_status','selected') }}
+  - Last updated: {{ state_attr('sensor.ezbeq_candidate_status','last_updated') }}
+
+  **Current candidate:** {{ states('sensor.ezbeq_candidate_details') }}
+  - Title: {{ state_attr('sensor.ezbeq_candidate_details','title') }} ({{ state_attr('sensor.ezbeq_candidate_details','year') }})
+  - Edition: {{ state_attr('sensor.ezbeq_candidate_details','edition_display') }}
+  - Audio: {{ state_attr('sensor.ezbeq_candidate_details','audio_types_text') }}
+  - Author: {{ state_attr('sensor.ezbeq_candidate_details','author') }}
+  - MV offset: {{ state_attr('sensor.ezbeq_candidate_details','mv') }}
+  - Note/Warning: {{ state_attr('sensor.ezbeq_candidate_details','note') or '' }} {{ state_attr('sensor.ezbeq_candidate_details','warning') or '' }}
+```
+
+## Key points
+- The **search inputs** (`sensor.ezbeq_candidate_tmdb_ids`, `sensor.ezbeq_candidate_titles`) are user-provided text entities.
+- The **search toggle** and **status/details sensors** are provided by the integration.
+- The **playback metadata sensors** you pass to `load_selected_candidate` are created/updated on the fly; you can use the recommended `sensor.ezbeq_candidate_*` IDs or your own.
