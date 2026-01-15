@@ -14,6 +14,7 @@ from homeassistant.exceptions import HomeAssistantError  # kept import (may be u
 from homeassistant.core import ServiceCall  # kept import (may be unused)
 
 from .services import async_setup_services, async_unload_services
+from .manual_load import async_setup_manual_load, async_unload_manual_load
 from .devices import async_setup_devices, DEFAULT_REFRESH_INTERVAL_SECS
 from .const import DOMAIN
 from .coordinator import EzBEQCoordinator
@@ -23,7 +24,8 @@ from ._http_log_proxy import HttpxLogProxy  # type: ignore[attr-defined]
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.SENSOR]
+# Now include the select platform for the native candidate selector
+PLATFORMS: list[Platform] = [Platform.SENSOR, Platform.SWITCH, Platform.SELECT]
 
 # Toggle to force all outgoing per-channel gains to a fixed pair.
 # Set OVERRIDE_GAINS to True to always send OVERRIDE_GAINS_VALUES (e.g., (0.0, 0.0)).
@@ -35,12 +37,15 @@ type EzBEQConfigEntry = ConfigEntry[EzBEQCoordinator]
 
 async def async_setup_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> bool:
     """Set up ezbeq Profile Loader from a config entry."""
+    # Ensure domain dict exists
+    hass.data.setdefault(DOMAIN, {})
+
     host = entry.data[CONF_HOST]
     port = entry.data[CONF_PORT]
 
     # Store the resolved base URL for use elsewhere
     base_url = f"http://{host}:{port}"
-    hass.data.setdefault(DOMAIN, {})["base_url"] = base_url
+    hass.data[DOMAIN]["base_url"] = base_url
 
     # TEMP: publish a debug sensor so you can see the URL in the UI
     hass.states.async_set("sensor.ezbeq_base_url_debug", base_url, {"source": "init.py"})
@@ -69,12 +74,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> boo
     device_registry = dr.async_get(hass)
     device_registry.async_get_or_create(
         config_entry_id=entry.entry_id,
-        identifiers={
-            (
-                DOMAIN,
-                f"{coordinator.config_entry.entry_id}_{DOMAIN}",
-            )
-        },
+        identifiers={(DOMAIN, f"{coordinator.config_entry.entry_id}_{DOMAIN}")},
         name="EzBEQ",
         manufacturer="EzBEQ",
         sw_version=coordinator.client.version,
@@ -89,7 +89,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> boo
     )
     hass.data[DOMAIN]["devices_cleanup"] = devices_cleanup
 
+    # Forward platforms (includes SELECT now)
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Setup manual-load sensors/services (select now handled as a native entity)
+    await async_setup_manual_load(hass, coordinator, DOMAIN)
+
     await async_setup_services(hass, coordinator, domain=DOMAIN)
     _LOGGER.debug(
         "Finished setting up ezbeq (override_gains=%s, values=%s, base_url=%s)",
@@ -109,6 +114,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: EzBEQConfigEntry) -> bo
         await coordinator.client.client.aclose()
 
     await async_unload_services(hass, DOMAIN)
+
+    # Remove manual-load services
+    await async_unload_manual_load(hass, DOMAIN)
 
     # stop devices sensor refresh
     cleanup = (hass.data.get(DOMAIN) or {}).pop("devices_cleanup", None)
