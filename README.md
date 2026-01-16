@@ -183,6 +183,12 @@ triggers:
   - entity_id: sensor.plex_session_1_tautulli
     attribute: audio_codec
     trigger: state
+  - trigger: state
+    entity_id:
+      - input_boolean.ezbeq_enable
+    from:
+      - "off"
+      - "on"
 conditions:
   - condition: template
     value_template: "{{ states('sensor.ezbeq_tv_tmdb_id') | is_number }}"
@@ -190,7 +196,7 @@ conditions:
     entity_id: input_boolean.ezbeq_enable
     state: "on"
 actions:
-    action: ezbeq.unload_beq_profile
+  - action: ezbeq.unload_beq_profile
   - delay: "00:00:05"
   - data:
       tmdb_sensor: sensor.ezbeq_tv_tmdb_id
@@ -200,8 +206,8 @@ actions:
       slots:
         - 1
       dry_run_mode: false
-      skip_search: false
-      enable_audio_codec_substitutions: false
+      skip_search: true
+      enable_audio_codec_substitutions: true
     action: ezbeq.load_beq_profile
   - data:
       entity_id: sensor.master_current_profile
@@ -236,6 +242,8 @@ conditions: []
 actions:
   - action: ezbeq.unload_beq_profile
     metadata: {}
+    data:
+      image_sensor: input_text.ezbeq_tv_beq_image_url
   - data:
       entity_id: sensor.master_current_profile
     action: homeassistant.update_entity
