@@ -462,7 +462,7 @@ You can only configure these variables by using a code editor addon within HA or
 2. File Services.py, variable CATALOG_CACHE_TTL: this is the amount of time in seconds that the BEQ database is cached on HA before it is refreshed. Please note that this only affects the BEQ image currently, but might affect other anscillary data over time if this integration is developed further. It does not affect the main BEQ catalogue used for loading the profiles. The default is one week, but you can change this if you need to. Restarting HA will also reset the cache.
 3. File Services.py, variable SUBSTITUTION_RULES. these rules allow you to search the catalogue again for a match using a different / substituted audio codec IF the primary load did not find a match. This allows for substituting audio codec data within the load itself and is useful when the sensors don't provide Atmos, DTS-X, Auro-3D but the database expects those matches. Also, this is useful when the database contains errors or codecs that actually are suitable for a load using the primary audio track. Use this with caution as incorrect matches or lists can result in loading the incorrect data. This is why this can be enabled or disabled within the service call itself using the enable_audio_codec_substitutions: false flag. It is enabled by passing enable_audio_codec_substitutions: true to the service.
 
-# Configuring ezBEQ for manual search and loading of BEQ profiles - GUIDE STILL IN BETA
+# Configuring ezBEQ for manual search and loading of BEQ profiles - GUIDE STILL IN BETA - Report any issues
 You might want to configure a manual loading dashboard like the below.
 
 <img width="1059" height="810" alt="Screenshot 2026-01-15 at 7 18 49 pm" src="https://github.com/user-attachments/assets/91456b99-1c65-40e5-9fb6-49974009e2db" />
@@ -477,16 +477,26 @@ This allows you to do BEQ profile loading manually using fuzzy search logic with
 These are created by the integration.
 
 ## What **you** must provide for searching
-The integration **reads** (but does not create) two text-like entities. You can use `input_text`, a template sensor, MQTT sensor, etc.—anything whose state is a string.
+The integration **reads** (but does not create) two text-like entities. You can use `input_text`, or a template sensor to drive these.
 
 - `sensor.ezbeq_candidate_tmdb_ids` (`SENSOR_TMDB_IDS`)
   - State: comma or semicolon list of TMDB IDs (e.g., `603,155`).
 - `sensor.ezbeq_candidate_titles` (`SENSOR_TITLES`)
-  - State: comma or semicolon list of title prefixes (fallback if TMDB is missing).
+  - State: comma or semicolon list of titles or partial titles.
 
 Populate these via your own YAML and / or automations. Examplea are shown below:
 
-<placeholder>
+sensor.ezbeq_candidate_titles:
+```yaml
+{% set title = states('sensor.ezbeq_tv_title') | default('', true) | trim %}
+{% set safe_title = '"' ~ title ~ '"' if ',' in title else title %}
+{{ safe_title[:12] }}
+```
+
+sensor.ezbeq_candidate_tmdb_ids
+```yaml
+{{ states('sensor.ezbeq_tv_tmdb_id') | default('') }}
+```
 
 ## Entities used when loading (auto-created on first use)
 When you call `ezbeq.load_selected_candidate`, you pass entity IDs for the playback metadata. The integration will `async_set` them (so they are created dynamically if they don’t exist):
@@ -496,8 +506,6 @@ When you call `ezbeq.load_selected_candidate`, you pass entity IDs for the playb
 - `sensor.ezbeq_candidate_codec`
 - `sensor.ezbeq_candidate_edition` (optional)
 - `sensor.ezbeq_candidate_title` (optional)
-
-If you prefer different IDs, pass your own in the service data; the integration will write to those.
 
 ## Service flow
 1) Ensure `switch.ezbeq_candidate_search_enabled` is **on**.
@@ -558,6 +566,23 @@ entities:
       enable_audio_codec_substitutions: false
 ```
 
+### Dropdown list for selecting a BEQ to load
+
+Example below is with mushroom cards:
+```yaml
+type: vertical-stack
+cards:
+  - type: custom:mushroom-select-card
+    entity: select.ezbeq_candidate
+    icon: mdi:movie-search
+    fill_container: true
+    secondary_info: none
+    name: BEQ Profiles Available
+grid_options:
+  columns: 12
+  rows: 2
+```
+
 ### Markdown card for status/details
 ```yaml
 type: markdown
@@ -580,7 +605,209 @@ content: |
   - Note/Warning: {{ state_attr('sensor.ezbeq_candidate_details','note') or '' }} {{ state_attr('sensor.ezbeq_candidate_details','warning') or '' }}
 ```
 
-## Key points
-- The **search inputs** (`sensor.ezbeq_candidate_tmdb_ids`, `sensor.ezbeq_candidate_titles`) are user-provided text entities.
-- The **search toggle** and **status/details sensors** are provided by the integration.
-- The **playback metadata sensors** you pass to `load_selected_candidate` are created/updated on the fly; you can use the recommended `sensor.ezbeq_candidate_*` IDs or your own.
+### Other example - Full section configuration
+
+You can use the below to re-create the page in the screenshot example
+
+```yaml
+- type: sections
+    max_columns: 2
+    title: ezBEQ Manual Load
+    path: ezbeq-manual-load
+    icon: mdi:car-shift-pattern
+    sections:
+      - type: grid
+        cards:
+          - type: heading
+            heading: Candidates
+            heading_style: title
+            icon: mdi:playlist-star
+          - type: tile
+            grid_options:
+              columns: full
+            entity: switch.ezbeq_candidate_search_enabled
+            name: ezBEQ Manual Load
+            icon: mdi:database-search
+            show_entity_picture: false
+            vertical: false
+            tap_action:
+              action: toggle
+            icon_tap_action:
+              action: toggle
+            features_position: bottom
+          - show_name: true
+            show_icon: true
+            type: button
+            name: Find Candidates
+            icon: mdi:tab-search
+            show_state: false
+            icon_height: 30px
+            grid_options:
+              columns: 4
+              rows: 2
+            tap_action:
+              action: perform-action
+              perform_action: ezbeq.find_candidates
+              target: {}
+            hold_action:
+              action: perform-action
+              perform_action: ezbeq.find_candidates
+              target: {}
+          - show_name: true
+            show_icon: true
+            type: button
+            name: Load Selected Candidate
+            icon: mdi:cloud-download
+            icon_height: 35px
+            tap_action:
+              action: call-service
+              service: ezbeq.load_selected_candidate
+              service_data:
+                tmdb_sensor: sensor.ezbeq_candidate_tmdb_id
+                year_sensor: sensor.ezbeq_candidate_year
+                codec_sensor: sensor.ezbeq_candidate_codec
+                edition_sensor: sensor.ezbeq_candidate_edition
+                title_sensor: sensor.ezbeq_candidate_title
+                slots:
+                  - 1
+                enable_audio_codec_substitutions: false
+            grid_options:
+              columns: 4
+              rows: 2
+          - show_name: true
+            show_icon: true
+            type: button
+            icon: mdi:cloud-download
+            icon_height: 35px
+            tap_action:
+              action: perform-action
+              perform_action: ezbeq.unload_beq_profile
+              target: {}
+            grid_options:
+              columns: 4
+              rows: 2
+            name: Unload BEQ Profile
+          - type: vertical-stack
+            cards:
+              - type: custom:mushroom-select-card
+                entity: select.ezbeq_candidate
+                icon: mdi:movie-search
+                fill_container: true
+                secondary_info: none
+                name: BEQ Profiles Available
+            grid_options:
+              columns: 12
+              rows: 2
+          - type: markdown
+            content: |-
+              <h3><b> BEQ Load Status </b> </h3> 
+
+              **State:** {{ states('sensor.ezbeq_load_status') }}
+                **Author:** {{ state_attr('sensor.ezbeq_load_status', 'author') }}
+                **Codec:** {{ state_attr('sensor.ezbeq_load_status', 'codec') }}
+                **Edition:** {{ state_attr('sensor.ezbeq_load_status', 'edition') }}
+                **Reason:** {{ state_attr('sensor.ezbeq_load_status', 'reason') }}
+                **Updated:** {{ state_attr('sensor.ezbeq_load_status', 'last_changed') }}
+                **Manual:** {{ state_attr('sensor.ezbeq_load_status', 'manual_load') }}
+      - type: grid
+        cards:
+          - type: heading
+            heading: Details
+            heading_style: title
+            icon: mdi:movie-check
+          - type: markdown
+            title: Selected Candidate
+            content: >
+              {% set ent = 'sensor.ezbeq_candidate_details' %}
+
+              {% set title = states(ent) %}
+
+              {% set attrs = state_attr(ent, 'all') or state_attr(ent, '') or
+              state_attr(ent, '_dummy') %}
+
+              {% macro get(name) -%}
+                {{ state_attr(ent, name) }}
+              {%- endmacro %}
+
+
+              {% if title in ['none', 'disabled', 'unknown', 'unavailable'] %}
+
+              **No candidate selected.**
+
+              {% else %}
+
+              ### {{ get('title') or title }}
+
+              - **Year:** {{ get('year') or '—' }}
+
+              - **Edition:** {{ get('edition') or '—' }}
+
+              - **Audio type:** {{ get('audio_type') or '—' }}
+
+              **All audio types:** {{
+              state_attr('sensor.ezbeq_candidate_details','audio_types_text') }}
+
+              - **Author:** {{ get('author') or '—' }}
+
+              - **TMDB ID:** {{ get('tmdb_id') or '—' }}
+
+              - **Source:** {{ get('source') or '—' }}
+
+              - **Content type:** {{ get('content_type') or '—' }}
+
+              - **Language:** {{ get('language') or '—' }}
+
+              - **MV offset:** {{ get('mv') if get('mv') is not none else '—' }}
+
+              - **Warning:** {{ get('warning') or '—' }}
+
+              - **Note:** {{ get('note') or '—' }}
+
+              - **Runtime (min):** {{ get('runtime_minutes') or '—' }}
+
+              - **Genres:** {{
+              state_attr('sensor.ezbeq_candidate_details','genres_text') }}
+
+
+              {% if get('image1') %}
+
+              ![Poster]({{ get('image1') }})
+
+              {% endif %}
+
+              {% if get('image2') %}
+
+              ![Alt Image]({{ get('image2') }})
+
+              {% endif %}
+
+              {% endif %}
+          - type: entities
+            entities:
+              - entity: sensor.ezbeq_candidate_tmdb_ids
+              - entity: sensor.ezbeq_candidate_titles
+            grid_options:
+              columns: 12
+              rows: 1
+          - type: markdown
+            title: ezbeq Candidate Status
+            content: |2-
+               **Stage:** {{ states('sensor.ezbeq_candidate_status') or '—' }}
+                **Reason:** {{ state_attr('sensor.ezbeq_candidate_status', 'reason') or '—' }}
+
+                **TMDB sensor found:** {{ state_attr('sensor.ezbeq_candidate_status', 'tmdb_sensor_found') }}
+                **Title sensor found:** {{ state_attr('sensor.ezbeq_candidate_status', 'title_sensor_found') }}
+                **TMDB values count:** {{ state_attr('sensor.ezbeq_candidate_status', 'tmdb_count') or 0 }}
+                **Title values count:** {{ state_attr('sensor.ezbeq_candidate_status', 'title_count') or 0 }}
+
+                **Candidates returned:** {{ state_attr('sensor.ezbeq_candidate_status', 'candidates') or 0 }}
+                **Selected label:** {{ state_attr('sensor.ezbeq_candidate_status', 'selected') or '—' }}
+
+                **Last updated (UTC):** {{ state_attr('sensor.ezbeq_candidate_status', 'last_updated') or '—' }}
+                
+               **Select state:** {{ states('select.ezbeq_candidate') or '—' }}
+                  **Detail label:** {{ states('sensor.ezbeq_candidate_details') or '—' }}
+```
+  
+
+
